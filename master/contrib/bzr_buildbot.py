@@ -250,18 +250,23 @@ if DEFINE_POLLER:
             # can take awhile. So we just push the bzr work off to a
             # thread.
             try:
-                changes = yield twisted.internet.threads.deferToThread(
-                    self.getRawChanges)
-            except (SystemExit, KeyboardInterrupt):
-                raise
-            except:
-                # we'll try again next poll.  Meanwhile, let's report.
-                twisted.python.log.err()
-            else:
-                for change in changes:
-                    yield self.addChange(
-                        buildbot.changes.changes.Change(**change))
-                    self.last_revision = change['revision']
+                # On a big tree, even individual elements of the bzr commands
+                # can take awhile. So we just push the bzr work off to a
+                # thread.
+                try:
+                    changes = yield twisted.internet.threads.deferToThread(
+                        self.getRawChanges)
+                except (SystemExit, KeyboardInterrupt):
+                    raise
+                except:
+                    # we'll try again next poll.  Meanwhile, let's report.
+                    twisted.python.log.err()
+                else:
+                    for change_kwargs in changes:
+                        yield self.addChange(change_kwargs)
+                        self.last_revision = change_kwargs['revision']
+            finally:
+                self.polling = False
 
         def getRawChanges(self):
             branch = bzrlib.branch.Branch.open_containing(self.url)[0]
@@ -289,12 +294,12 @@ if DEFINE_POLLER:
             changes.reverse()
             return changes
 
-        def addChange(self, change):
+        def addChange(self, change_kwargs):
             d = defer.Deferred()
-
             def _add_change():
                 d.callback(
-                    self.parent.addChange(change, src='bzr'))
+                    self.master.data.updates.addChange(src='bzr',
+                                                    **change_kwargs))
             twisted.internet.reactor.callLater(0, _add_change)
             return d
 
