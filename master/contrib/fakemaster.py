@@ -128,11 +128,9 @@ class CmdInterface(basic.LineReceiver):
         d = self.bot.runCommand(line)
         d.addBoth(_done)
 
-
-class FakeMaster(service.MultiService):
-
+class FakeMaster(service.AsyncMultiService):
     def __init__(self, port):
-        service.MultiService.__init__(self)
+        service.AsyncMultiService.__init__(self)
         self.setName("fakemaster")
 
         self.dispatcher = Dispatcher()
@@ -144,7 +142,7 @@ class FakeMaster(service.MultiService):
         self.stdio = CmdInterface()
 
     def startService(self):
-        service.MultiService.startService(self)
+        service.AsyncMultiService.startService(self)
         self.slavePort = strports.service(self.slavePort, self.slavefactory)
         self.slavePort.setServiceParent(self)
 
