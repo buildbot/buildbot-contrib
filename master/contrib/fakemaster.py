@@ -13,7 +13,6 @@
 
 import sys
 
-from twisted.application import service
 from twisted.application import strports
 from twisted.cred import checkers
 from twisted.cred import portal
@@ -25,8 +24,9 @@ from zope.interface import implements
 from twisted.internet import stdio
 from twisted.protocols import basic
 
-from buildbot.util import service
 from buildbot.process.buildstep import RemoteShellCommand
+from buildbot.util import service
+
 
 
 class Dispatcher:
@@ -129,7 +129,9 @@ class CmdInterface(basic.LineReceiver):
         d = self.bot.runCommand(line)
         d.addBoth(_done)
 
+
 class FakeMaster(service.AsyncMultiService):
+
     def __init__(self, port):
         service.AsyncMultiService.__init__(self)
         self.setName("fakemaster")
