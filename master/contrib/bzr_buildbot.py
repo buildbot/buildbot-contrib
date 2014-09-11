@@ -250,23 +250,17 @@ if DEFINE_POLLER:
             # can take awhile. So we just push the bzr work off to a
             # thread.
             try:
-                # On a big tree, even individual elements of the bzr commands
-                # can take awhile. So we just push the bzr work off to a
-                # thread.
-                try:
-                    changes = yield twisted.internet.threads.deferToThread(
-                        self.getRawChanges)
-                except (SystemExit, KeyboardInterrupt):
-                    raise
-                except:
-                    # we'll try again next poll.  Meanwhile, let's report.
-                    twisted.python.log.err()
-                else:
-                    for change_kwargs in changes:
-                        yield self.addChange(change_kwargs)
-                        self.last_revision = change_kwargs['revision']
-            finally:
-                self.polling = False
+                changes = yield twisted.internet.threads.deferToThread(
+                    self.getRawChanges)
+            except (SystemExit, KeyboardInterrupt):
+                raise
+            except Exception:
+                # we'll try again next poll.  Meanwhile, let's report.
+                twisted.python.log.err()
+            else:
+                for change_kwargs in changes:
+                    yield self.addChange(change_kwargs)
+                    self.last_revision = change_kwargs['revision']
 
         def getRawChanges(self):
             branch = bzrlib.branch.Branch.open_containing(self.url)[0]
@@ -352,7 +346,7 @@ def _putResultInDeferred(reactor, deferred, f, args, kwargs):
     """
     try:
         result = f(*args, **kwargs)
-    except:
+    except Exception:
         f = failure.Failure()
         reactor.callFromThread(deferred.errback, f)
     else:
