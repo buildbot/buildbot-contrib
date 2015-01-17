@@ -18,7 +18,10 @@ import logging
 import os
 import sys
 from hashlib import sha1
-from httplib import BAD_REQUEST, INTERNAL_SERVER_ERROR, ACCEPTED, OK
+from httplib import ACCEPTED
+from httplib import BAD_REQUEST
+from httplib import INTERNAL_SERVER_ERROR
+from httplib import OK
 from optparse import OptionParser
 
 from twisted.cred import credentials
