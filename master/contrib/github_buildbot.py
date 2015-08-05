@@ -99,12 +99,9 @@ class GitHubBuildBot(resource.Resource):
         event_type = request.getHeader("X-GitHub-Event")
         logging.debug("X-GitHub-Event: %r", event_type)
 
-        if event_type == "ping":
-            request.setResponseCode(OK)
-            return json.dumps({"result": "pong"})
+        handler = getattr(self, 'handle_%s' % event_type, None)
 
-        # Reject events not involving code changes
-        if event_type not in ("push", "pull_request"):
+        if handler is None:
             logging.info(
                 "Rejecting request. Received unsupported event %r.",
                 event_type)
@@ -112,7 +109,6 @@ class GitHubBuildBot(resource.Resource):
             return json.dumps({"error": "Bad Request."})
 
         try:
-
             content_type = request.getHeader("Content-Type")
 
             if content_type == "application/json":
@@ -129,11 +125,7 @@ class GitHubBuildBot(resource.Resource):
             logging.debug("Payload: %r", payload)
             repo = payload['repository']['full_name']
             repo_url = payload['repository']['html_url']
-            changes = None
-            if event_type == "push":
-                changes = self.process_changes(payload, repo, repo_url)
-            elif event_type == "pull_request":
-                changes = self.process_changes_pr(payload, repo, repo_url)
+            changes = handler(payload, repo, repo_url)
             self.send_changes(changes, request)
             return server.NOT_DONE_YET
 
@@ -167,7 +159,10 @@ class GitHubBuildBot(resource.Resource):
              'project': repo,
              'branch': branch}
 
-    def process_changes(self, payload, repo, repo_url):
+    def handle_ping(self, *_):
+        return None
+
+    def handle_push(self, payload, repo, repo_url):
         """
         Consumes the JSON as a python object and actually starts the build.
 
@@ -199,7 +194,7 @@ class GitHubBuildBot(resource.Resource):
                     change, branch, repo, repo_url))
         return changes
 
-    def process_changes_pr(self, payload, repo, repo_url):
+    def handle_pull_request(self, payload, repo, repo_url):
         """
         Consumes the JSON as a python object and actually starts the build.
 
