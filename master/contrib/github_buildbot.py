@@ -376,7 +376,8 @@ def setup_options():
                             level=logging._levelNames[options.level.upper()])
     else:
         logging.basicConfig(format=log_format,
-                            handlers=[logging.StreamHandler(stream=sys.stdout)],
+                            handlers=[
+                                logging.StreamHandler(stream=sys.stdout)],
                             level=logging._levelNames[options.level.upper()])
 
     return options
