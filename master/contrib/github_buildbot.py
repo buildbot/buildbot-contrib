@@ -32,7 +32,8 @@ from optparse import OptionParser
 from twisted.cred import credentials
 from twisted.internet import reactor
 from twisted.spread import pb
-from twisted.web import resource, server
+from twisted.web import resource
+from twisted.web import server
 
 try:
     import json

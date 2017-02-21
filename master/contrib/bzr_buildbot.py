@@ -300,6 +300,7 @@ if DEFINE_POLLER:
 
         def addChange(self, change_kwargs):
             d = defer.Deferred()
+
             def _add_change():
                 d.callback(
                     self.master.data.updates.addChange(src='bzr',
