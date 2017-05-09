@@ -14,12 +14,6 @@
 # repository to watch.
 
 
-# 15.03.06 by John Pye
-# 29.03.06 by Niklaus Giger, added support to run under windows,
-# added invocation option
-# 22.03.10 by Johnnie Pittman, added support for category and interval
-# options.
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -34,11 +28,43 @@ from xml.parsers.expat import ExpatError
 if sys.platform == 'win32':
     import win32pipe
 
-
 def getoutput(cmd):
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    return p.stdout.read()
+    timeout = 120
+    maxtries = 3
+    if sys.platform == 'win32':
+        f = win32pipe.popen(cmd)
+        stdout = ''.join(f.readlines())
+        f.close()
+    else:
+        currentry = 1
+        while True: # retry loop
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            waited = 0
+            while True: # wait loop
+                if p.poll() != None:
+                    break # process ended.
+                if waited > timeout:
+                    print("WARNING: Timeout of %s seconds reached while trying to run: %s" % ( timeout,' '.join(cmd)) )
+                    break
+                waited += 1
+                time.sleep(1)
 
+            if p.returncode != None: # process has endend
+                stdout = p.stdout.read()
+                if p.returncode == 0:
+                    break # ok: exit retry loop
+                else:
+                    print('WARNING: "%s" returned status code: %s' % (' '.join(cmd), p.returncode))
+                    if stdout is not None:
+                        print(stdout)
+            else:
+                p.kill()
+
+            if currentry > maxtries:
+                print("ERROR: Reached maximum number of tries (%s) to run: %s" % ( maxtries,' '.join(cmd)) )
+                sys.exit(1)
+            currentry += 1
+    return stdout
 
 def sendchange_cmd(master, revisionData):
     cmd = [
@@ -46,12 +72,18 @@ def sendchange_cmd(master, revisionData):
         "sendchange",
         "--master=%s" % master,
         "--revision=%s" % revisionData['revision'],
-        "--username=%s" % revisionData['author'],
+        "--who=%s" % revisionData['author'],
         "--comments=%s" % revisionData['comments'],
         "--vc=%s" % 'svn',
     ]
+    if opts.revlink:
+        cmd.append("--revlink=%s/%s" % (opts.revlink, revisionData['revision']))
     if opts.category:
         cmd.append("--category=%s" % opts.category)
+    if opts.branch:
+        cmd.append("--branch=%s" % opts.branch)
+    if opts.auth:
+        cmd.append("--auth=%s" % opts.auth)
     for path in revisionData['paths']:
         cmd.append(path)
 
@@ -103,26 +135,34 @@ def parseChangeXML(raw_xml):
     # grab the appropriate file paths that changed.
     pathlist = log_entry.getElementsByTagName("paths")[0]
     paths = []
+    if opts.branch:
+        branchtoken =  "/" + opts.branch.strip("/") + "/"
     for path in pathlist.getElementsByTagName("path"):
-        paths.append("".join([t.data for t in path.childNodes]))
+        filename = "".join([t.data for t in path.childNodes])
+        if opts.branch:
+            filename = filename.split(branchtoken, 1)[1]
+        paths.append(filename)
     data['paths'] = paths
 
     return data
 
 
+# FIXME: instead of just picking the last svn change each $interval minutes,
+# we should be querying the svn server for all the changes between our
+# last check and now, and notify the buildmaster about all of them.
+# This is an example of a svn query we could do to get allo those changes:
+# svn log --xml --non-interactive -r ${lastrevchecked}:HEAD https://repo.url/branch
+
 def checkChanges(repo, master, oldRevision=-1):
+
     cmd = ["svn", "log", "--non-interactive", "--xml", "--verbose",
            "--limit=1", repo]
 
     if opts.verbose:
         print("Getting last revision of repository: " + repo)
 
-    if sys.platform == 'win32':
-        f = win32pipe.popen(cmd)
-        xml1 = ''.join(f.readlines())
-        f.close()
-    else:
-        xml1 = getoutput(cmd)
+    xml1 = getoutput(cmd)
+    pretty_time = time.strftime("%F %T ")
 
     if opts.verbose:
         print("XML\n-----------\n" + xml1 + "\n\n")
@@ -136,17 +176,13 @@ def checkChanges(repo, master, oldRevision=-1):
     if revisionData['revision'] != oldRevision:
 
         cmd = sendchange_cmd(master, revisionData)
+        status = getoutput(cmd)
 
-        if sys.platform == 'win32':
-            f = win32pipe.popen(cmd)
-            pretty_time = time.strftime("%H.%M.%S ")
-            print("%s Revision %s: %s" % (pretty_time, revisionData['revision'],
-                                          ''.join(f.readlines())))
-            f.close()
-        else:
-            xml1 = getoutput(cmd)
+        print("%s Revision %s: %s" % (pretty_time, revisionData['revision'],
+                                      status))
+
     else:
-        pretty_time = time.strftime("%H.%M.%S ")
+
         print("%s nothing has changed since revision %s" % (pretty_time,
                                                             revisionData['revision']))
 
@@ -170,6 +206,21 @@ def build_parser():
     parser.add_option(
         "-v", "--verbose", dest="verbose", action="store_true", default=False,
         help="Enables more information to be presented on the command line.",
+    )
+
+    parser.add_option(
+        "-b", "--branch", dest="branch", action="store", default=None,
+        help="Watch only changes for this branch and send the branch info.",
+    )
+
+    parser.add_option(
+        "-a", "--auth", dest="auth", action="store", default=None,
+        help="Authentication token - username:password.",
+    )
+
+    parser.add_option(
+        "-l", "--link", dest="revlink", action="store", default=None,
+        help="A base URL for the revision links.",
     )
 
     parser.add_option(
@@ -209,6 +260,9 @@ if __name__ == '__main__':
     # grab what we need
     repo_url = args[0]
     bbmaster = args[1]
+
+    if opts.branch:
+        repo_url = repo_url.rstrip("/") + "/" + opts.branch.lstrip("/")
 
     # if watch is specified, run until stopped
     if opts.watch or opts.interval:
