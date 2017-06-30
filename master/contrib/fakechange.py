@@ -4,9 +4,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import commands
 import os.path
 import random
+import subprocess
 import sys
 
 from twisted.cred import credentials
@@ -71,7 +71,8 @@ def send_change(remote):
         files = sys.argv[1:]
     else:
         files = [makeFilename()]
-    comments = commands.getoutput("fortune")
+    comments = subprocess.check_output(["fortune"])
+    comments = comments.decode(sys.stdout.encoding)
     change = {'who': who, 'files': files, 'comments': comments}
     d = remote.callRemote('addChange', change)
     d.addCallback(done)
