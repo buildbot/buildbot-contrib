@@ -1,31 +1,41 @@
-#!/usr/bin/python
+#!/usr/bin/python3
+# vim: expandtab:ts=4:sw=4:
 
-# this requires python >=2.3 for the 'sets' module.
-
-# The sets.py from python-2.3 appears to work fine under python2.2 . To
-# install this script on a host with only python2.2, copy
-# /usr/lib/python2.3/sets.py from a newer python into somewhere on your
-# PYTHONPATH, then edit the #! line above to invoke python2.2
-
-# python2.1 is right out
+# Note: this script is written for Python 3. Probably it doesn't work
+# with Python 2 any more.
 
 # If you run this program as part of your SVN post-commit hooks, it will
 # deliver Change notices to a buildmaster that is running a PBChangeSource
 # instance.
 
-# edit your svn-repository/hooks/post-commit file, and add lines that look
+# Edit your svn-repository/hooks/post-commit file, and add lines that look
 # like this:
+#
+#    #!/bin/bash
+#    # set up PYTHONPATH to contain Twisted/buildbot perhaps, if not already
+#    # installed site-wide
+#    REPOS="$1"
+#    REV="$2"
+#    TXN_NAME="$3"
+#    #echo "REVISION $REV, REPOSITORY $REPOS"
+#    /path/to/svn_buildbot.py -v $REV -r "$REPOS" --auth MyPa55Wd
+#
+# You can also try out this script directly, but ensure you run it as a user
+# who has read access to `svn-repository`. Replace $REPOS with the full
+# path to your repository, and replace $REV with any revision number.
+#
+# Note that the default settings assume the buildbot has a PBChangeSource
+# running at localhost:9989. If your setup is different, you will need to
+# add extra parameters. Also note the default username 'change' for the PB
+# connection.
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from future.utils import text_type
-
-import commands
+import subprocess
 import os
 import re
-import sets
 import sys
+
+def encode(mystring,encoding):
+	return mystring.encode(encoding)
 
 from twisted.cred import credentials
 from twisted.internet import defer
@@ -41,7 +51,6 @@ from twisted.spread import pb
 /path/to/svn_buildbot.py --repository "$REPOS" --revision "$REV" \
 --bbserver localhost --bbport 9989 --username myuser --auth passwd
 '''
-
 
 # We have hackish "-d" handling here rather than in the Options
 # subclass below because a common error will be to not have twisted in
@@ -72,7 +81,7 @@ class Options(usage.Options):
          "The revision that we want to examine (default: latest)"],
         ['bbserver', 's', 'localhost',
          "The hostname of the server that buildbot is running on"],
-        ['bbport', 'p', 8007,
+        ['bbport', 'p', 9989,
          "The port that buildbot is listening on"],
         ['username', 'u', 'change',
          "Username used in PB connection auth"],
@@ -92,7 +101,7 @@ be considered for a build.
 You may provide more than one -F argument to try multiple
 patterns.  Excludes override includes, that is, patterns that match both an
 include and an exclude will be excluded.'''],
-        ['encoding', 'e', "utf8",
+        ['encoding', 'e', "utf-8",
          "The encoding of the strings from subversion (default: utf8)"],
         ['project', 'P', None, "The project for the source."]
     ]
@@ -123,6 +132,11 @@ include and an exclude will be excluded.'''],
         if self._excludes:
             self['excludes'] = '(%s)' % ('|'.join(self._excludes), )
 
+#------------------
+# file-path splitting functions
+
+# NOTE: it is important that you select one of these, or write a new one
+# tailored to your repository.
 
 def split_file_dummy(changed_file):
     """Split the repository-relative filename into a tuple of (branchname,
@@ -132,18 +146,16 @@ def split_file_dummy(changed_file):
     return (None, changed_file)
 
 
-# this version handles repository layouts that look like:
-#  trunk/files..                  -> trunk
-#  branches/branch1/files..       -> branches/branch1
-#  branches/branch2/files..       -> branches/branch2
-#
-
-
 def split_file_branches(changed_file):
+    """Split the repository-relative filename a type of (branchname,relativepath).
+    This version actually does so, assume a repository structure like
+       trunk/files..                  -> trunk
+       branches/branch1/files..       -> branches/branch1
+       branches/branch2/files..       -> branches/branch2
+    """
     pieces = changed_file.split(os.sep)
     if pieces[0] == 'branches':
-        return (os.path.join(*pieces[:2]),
-                os.path.join(*pieces[2:]))
+        return (pieces[1], os.path.join(*pieces[2:]))
     if pieces[0] == 'trunk':
         return (pieces[0], os.path.join(*pieces[1:]))
     # there are other sibilings of 'trunk' and 'branches'. Pretend they are
@@ -153,8 +165,10 @@ def split_file_branches(changed_file):
     raise RuntimeError("cannot determine branch for '%s'" % changed_file)
 
 
-split_file = split_file_dummy
+#split_file = split_file_dummy
+split_file = split_file_branches
 
+#---------------
 
 class ChangeSender:
 
@@ -165,17 +179,16 @@ class ChangeSender:
         # first we extract information about the files that were changed
         repo = opts['repository']
         worker_repo = opts['worker-repo'] or repo
-        print("Repo:", repo)
         rev_arg = ''
         if opts['revision']:
             rev_arg = '-r %s' % (opts['revision'], )
-        changed = commands.getoutput('svnlook changed %s "%s"' % (
+        changed = subprocess.getoutput('svnlook changed %s "%s"' % (
             rev_arg, repo)).split('\n')
         # the first 4 columns can contain status information
         changed = [x[4:] for x in changed]
 
-        message = commands.getoutput('svnlook log %s "%s"' % (rev_arg, repo))
-        who = commands.getoutput('svnlook author %s "%s"' % (rev_arg, repo))
+        message = subprocess.getoutput('svnlook log %s "%s"' % (rev_arg, repo))
+        who = subprocess.getoutput('svnlook author %s "%s"' % (rev_arg, repo))
         revision = opts.get('revision')
         if revision is not None:
             revision = str(int(revision))
@@ -184,15 +197,15 @@ class ChangeSender:
         changestring = '\n'.join(changed)
         fltpat = opts['includes']
         if fltpat:
-            included = sets.Set(re.findall(fltpat, changestring))
+            included = set(re.findall(fltpat, changestring))
         else:
-            included = sets.Set(changed)
+            included = set(changed)
 
         expat = opts['excludes']
         if expat:
-            excluded = sets.Set(re.findall(expat, changestring))
+            excluded = set(re.findall(expat, changestring))
         else:
-            excluded = sets.Set([])
+            excluded = set([])
         if len(included.difference(excluded)) == 0:
             print(changestring)
             print("""\
@@ -214,21 +227,21 @@ class ChangeSender:
         changes = []
         encoding = opts['encoding']
         for branch in files_per_branch.keys():
-            d = {'who': text_type(who, encoding=encoding),
-                 'repository': text_type(worker_repo, encoding=encoding),
-                 'comments': text_type(message, encoding=encoding),
-                 'revision': revision,
-                 'project': text_type(opts['project'] or "", encoding=encoding),
-                 'src': 'svn',
+            d = {'who': encode(who,encoding=encoding),
+                 'repository': encode(worker_repo,encoding=encoding),
+                 'comments': encode(message,encoding=encoding),
+                 'revision': encode(revision,encoding),
+                 'project': encode(opts['project'] or "",encoding=encoding),
+                 'src': encode('svn',encoding),
                  }
             if branch:
-                d['branch'] = text_type(branch, encoding=encoding)
+                d['branch'] = encode(branch,encoding=encoding)
             else:
                 d['branch'] = branch
 
             files = []
-            for file in files_per_branch[branch]:
-                files.append(text_type(file, encoding=encoding))
+            for file1 in files_per_branch[branch]:
+                files.append(encode(file1,encoding=encoding))
             d['files'] = files
 
             changes.append(d)
@@ -270,14 +283,14 @@ class ChangeSender:
         d = self.sendChanges(opts, changes)
 
         def quit(*why):
-            print("quitting! because", why)
+            if why[1] is not "SUCCESS":
+                print("quitting! because", why)
             reactor.stop()
 
-        d.addCallback(quit, "SUCCESS")
+        d.addCallback(quit,"SUCCESS")
 
         @d.addErrback
         def failed(f):
-            print("FAILURE")
             print(f)
             reactor.stop()
 
@@ -288,3 +301,4 @@ class ChangeSender:
 if __name__ == '__main__':
     s = ChangeSender()
     s.run()
+
