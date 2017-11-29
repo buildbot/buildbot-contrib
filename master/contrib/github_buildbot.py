@@ -23,10 +23,6 @@ import os
 import re
 import sys
 from hashlib import sha1
-from httplib import ACCEPTED
-from httplib import BAD_REQUEST
-from httplib import INTERNAL_SERVER_ERROR
-from httplib import OK
 from optparse import OptionParser
 
 from twisted.cred import credentials
@@ -39,6 +35,13 @@ try:
     import json
 except ImportError:
     import simplejson as json
+
+
+
+ACCEPTED = 202
+BAD_REQUEST = 400
+INTERNAL_SERVER_ERROR = 500
+OK = 200
 
 
 class GitHubBuildBot(resource.Resource):
@@ -61,7 +64,7 @@ class GitHubBuildBot(resource.Resource):
         """
 
         # All responses are application/json
-        request.setHeader("Content-Type", "application/json")
+        request.setHeader(b"Content-Type", b"application/json")
 
         content = request.content.read()
 
@@ -72,7 +75,7 @@ class GitHubBuildBot(resource.Resource):
         # requests from learning about why they failed to POST data
         # to us.
         if self.secret is not None:
-            signature = request.getHeader("X-Hub-Signature")
+            signature = request.getHeader(b"X-Hub-Signature")
 
             if signature is None:
                 logging.error("Rejecting request.  Signature is missing.")
@@ -80,7 +83,7 @@ class GitHubBuildBot(resource.Resource):
                 return json.dumps({"error": "Bad Request."})
 
             try:
-                hash_type, hexdigest = signature.split("=")
+                hash_type, hexdigest = signature.split(b"=")
 
             except ValueError:
                 logging.error("Rejecting request.  Bad signature format.")
@@ -90,7 +93,7 @@ class GitHubBuildBot(resource.Resource):
             else:
                 # sha1 is hard coded into github's source code so it's
                 # unlikely this will ever change.
-                if hash_type != "sha1":
+                if hash_type != b"sha1":
                     logging.error("Rejecting request.  Unexpected hash type.")
                     request.setResponseCode(BAD_REQUEST)
                     return json.dumps({"error": "Bad Request."})
@@ -101,10 +104,10 @@ class GitHubBuildBot(resource.Resource):
                     request.setResponseCode(BAD_REQUEST)
                     return json.dumps({"error": "Bad Request."})
 
-        event_type = request.getHeader("X-GitHub-Event")
-        logging.debug("X-GitHub-Event: %r", event_type)
+        event_type = request.getHeader(b"X-GitHub-Event")
+        logging.debug(b"X-GitHub-Event: " + event_type)
 
-        handler = getattr(self, 'handle_%s' % event_type, None)
+        handler = getattr(self, u'handle_' + event_type.decode("ascii"), None)
 
         if handler is None:
             logging.info(
@@ -114,11 +117,11 @@ class GitHubBuildBot(resource.Resource):
             return json.dumps({"error": "Bad Request."})
 
         try:
-            content_type = request.getHeader("Content-Type")
+            content_type = request.getHeader(b"Content-Type")
 
-            if content_type == "application/json":
+            if content_type == b"application/json":
                 payload = json.loads(content)
-            elif content_type == "application/x-www-form-urlencoded":
+            elif content_type == b"application/x-www-form-urlencoded":
                 payload = json.loads(request.args["payload"][0])
             else:
                 logging.info(
@@ -127,7 +130,7 @@ class GitHubBuildBot(resource.Resource):
                 request.setResponseCode(BAD_REQUEST)
                 return json.dumps({"error": "Bad Request."})
 
-            logging.debug("Payload: %r", payload)
+            logging.debug("Payload: " + payload)
             repo = payload['repository']['full_name']
             repo_url = payload['repository']['html_url']
             changes = handler(payload, repo, repo_url)
