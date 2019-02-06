@@ -5,6 +5,8 @@ After=network.target
 
 
 [Service]
+# Uncomment line to set a fixed PATH, systemd PATH may not match your expected PATH in certain scenarios
+# Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 User=buildbot
 Group=buildbot
 WorkingDirectory=/home/buildbot/worker
