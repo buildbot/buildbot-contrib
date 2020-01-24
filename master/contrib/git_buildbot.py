@@ -177,7 +177,7 @@ def grab_commit_info(c, rev):
 
     c['comments'] = ''.join(comments)
     c['files'] = files
-    status = f.terminate()
+    status = f.wait()
     if status:
         logging.warning("git show exited with status %d", status)
 
@@ -221,15 +221,21 @@ def gen_create_branch_changes(newrev, refname, branch):
 
     logging.info("Branch `%s' created", branch)
 
-    f = subprocess.Popen(shlex.split("git rev-parse --not --branches"
-                 + "| grep -v $(git rev-parse %s)" % refname
-                 +
-                 "| git rev-list --reverse --pretty=oneline --stdin %s" % newrev),
-                 stdout=subprocess.PIPE)
+    p = subprocess.Popen(shlex.split("git rev-parse %s" % refname), stdout=subprocess.PIPE)
+    branchref = p.communicate()[0].strip().decode(encoding)
+    f = subprocess.Popen(shlex.split("git rev-parse --not --branches"), stdout=subprocess.PIPE)
+    f2 = subprocess.Popen(shlex.split("grep -v %s" % branchref),
+                          stdin=f.stdout,
+                          stdout=subprocess.PIPE)
+    f3 = subprocess.Popen(
+        shlex.split("git rev-list --reverse --pretty=oneline --stdin %s" % newrev),
+        stdin=f2.stdout,
+        stdout=subprocess.PIPE
+    )
 
-    gen_changes(f, branch)
+    gen_changes(f3, branch)
 
-    status = f.close()
+    status = f3.wait()
     if status:
         logging.warning("git rev-list exited with status %d", status)
 
@@ -243,7 +249,7 @@ def gen_create_tag_changes(newrev, refname, tag):
     f = subprocess.Popen(shlex.split("git log -n 1 --pretty=oneline %s" % newrev),
                          stdout=subprocess.PIPE)
     gen_changes(f, tag)
-    status = f.close()
+    status = f.wait()
     if status:
         logging.warning("git log exited with status %d", status)
 
@@ -286,7 +292,7 @@ def gen_update_branch_changes(oldrev, newrev, refname, branch):
             logging.debug("  Rewound file: %s", file)
             files.append(text_type(file))
 
-        status = f.terminate()
+        status = f.wait()
         if status:
             logging.warning("git diff exited with status %d", status)
 
@@ -318,7 +324,7 @@ def gen_update_branch_changes(oldrev, newrev, refname, branch):
                              stdout=subprocess.PIPE)
         gen_changes(f, branch)
 
-        status = f.terminate()
+        status = f.wait()
         if status:
             logging.warning("git rev-list exited with status %d", status)
 
@@ -376,7 +382,7 @@ def process_changes():
 def send_changes():
     # Submit the changes, if any
     if not changes:
-        logging.warning("No changes found")
+        logging.info("No changes found")
         return
 
     host, port = master.split(':')
@@ -436,7 +442,7 @@ def parse_options():
 # information to a file as well (we'll set that up later.)
 stderr = logging.StreamHandler(sys.stderr)
 fmt = logging.Formatter("git_buildbot: %(levelname)s: %(message)s")
-stderr.setLevel(logging.NOTSET)
+stderr.setLevel(logging.WARNING)
 stderr.setFormatter(fmt)
 logging.getLogger().addHandler(stderr)
 logging.getLogger().setLevel(logging.NOTSET)
