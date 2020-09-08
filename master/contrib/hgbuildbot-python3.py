@@ -155,7 +155,6 @@ from mercurial.node import hex
 from mercurial.node import nullid
 
 def hook(ui, repo, hooktype, node=None, source=None, **kwargs):
-    import sys
     if hooktype != b'changegroup':
         ui.status(('hgbuildbot: hooktype %s not supported.\n' % hooktype).encode())
         return
