@@ -29,11 +29,10 @@ from __future__ import print_function
 from future.utils import iteritems
 try:
     from future.utils import text_type
-except:
+except ImportError:
     from six import text_type
 
 import logging
-import os
 import re
 import subprocess
 import shlex
@@ -134,7 +133,7 @@ def addChanges(remote, changei, src='git'):
         except StopIteration:
             remote.broker.transport.loseConnection()
             finished_d.callback(None)
-        except e:
+        except Exception as e:
             logging.error(e)
 
     iter()
