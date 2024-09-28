@@ -146,7 +146,12 @@ def connected(remote):
 
 def grab_commit_info(c, rev):
     # Extract information about committer and files using git show
-    f = subprocess.Popen(shlex.split("git show --raw --pretty=full %s" % rev),
+    options = "--raw --pretty=full"
+    if first_parent:
+        # Show the full diff for merges to avoid losing changes
+        # when builds are not triggered for merged in commits
+        options += " --diff-merges=first-parent"
+    f = subprocess.Popen(shlex.split("git show %s %s" % (options, rev)),
                          stdout=subprocess.PIPE)
 
     files = []
@@ -172,7 +177,8 @@ def grab_commit_info(c, rev):
             logging.debug("Got author: %s", m.group(1))
             c['who'] = text_type(m.group(1))
 
-        if re.match(r"^Merge: .*$", line):
+        # Retain default behavior if all commits trigger builds
+        if not first_parent and re.match(r"^Merge: .*$", line):
             files.append('merge')
 
     c['comments'] = ''.join(comments)
@@ -227,11 +233,14 @@ def gen_create_branch_changes(newrev, refname, branch):
     f2 = subprocess.Popen(shlex.split("grep -v %s" % branchref),
                           stdin=f.stdout,
                           stdout=subprocess.PIPE)
-    f3 = subprocess.Popen(
-        shlex.split("git rev-list --reverse --pretty=oneline --stdin %s" % newrev),
-        stdin=f2.stdout,
-        stdout=subprocess.PIPE
-    )
+    options = "--reverse --pretty=oneline --stdin"
+    if first_parent:
+        # Don't add merged commits to avoid running builds twice for the same
+        # changes, as they should only be done for first parent commits
+        options += " --first-parent"
+    f3 = subprocess.Popen(shlex.split("git rev-list %s %s" % (options, newrev)),
+                          stdin=f2.stdout,
+                          stdout=subprocess.PIPE)
 
     gen_changes(f3, branch)
 
