@@ -162,8 +162,9 @@ def grab_commit_info(c, rev):
 
         m = re.match(r"^:.*[MAD]\s+(.+)$", line)
         if m:
-            logging.debug("Got file: %s", m.group(1))
-            files.append(text_type(m.group(1)))
+            file = m.group(1)
+            logging.debug("Got file: %s", file)
+            files.append(text_type(file))
             continue
 
         m = re.match(r"^Author:\s+(.+)$", line)
@@ -287,9 +288,11 @@ def gen_update_branch_changes(oldrev, newrev, refname, branch):
             if not line:
                 break
 
-            file = re.match(r"^:.*[MAD]\s+(.+)$", line).group(1)
-            logging.debug("  Rewound file: %s", file)
-            files.append(text_type(file))
+            m = re.match(r"^:.*[MAD]\s+(.+)$", line)
+            if m:
+                file = m.group(1)
+                logging.debug("  Rewound file: %s", file)
+                files.append(text_type(file))
 
         status = f.wait()
         if status:
